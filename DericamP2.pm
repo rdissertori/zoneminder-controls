@@ -1,7 +1,8 @@
 # ==========================================================================
 #
-# ZoneMinder Dericam P2 IP Control Protocol Module, $Date: 2009-11-25 09:20:00 +0000 (Wed, 04 Nov 2009) $, $Revision: 0001 $
-# Copyright (C) 2001-2015 Roman Dissertori
+# ZoneMinder Dericam P2 Control Protocol Module
+# Copyright (C) Jan M. Hochstein
+#
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
@@ -14,63 +15,40 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # ==========================================================================
 #
-# This module contains the implementation of the Wanscam HW0025 IP camera control
-# protocol
-#
-# Known working Devices:
-# * Dericam P2
+# This module contains the implementation of the Dericam P2 device control protocol
 #
 package ZoneMinder::Control::DericamP2;
- 
+
 use 5.006;
 use strict;
 use warnings;
 
-require ZoneMinder::Base;
 require ZoneMinder::Control;
 
 our @ISA = qw(ZoneMinder::Control);
- 
+
+our %CamParams = ();
+
 # ==========================================================================
 #
-# Dericam P2 IP Control Protocol
+# Dericam P2 Control Protocol
+#
+# On ControlAddress use the format :
+#   USERNAME:PASSWORD@ADDRESS:PORT
+#   eg : admin:@10.1.2.1:80
+#        zoneminder:zonepass@10.0.100.1:40000
 #
 # ==========================================================================
- 
+
 use ZoneMinder::Logger qw(:all);
 use ZoneMinder::Config qw(:all);
 
 use Time::HiRes qw( usleep );
- 
-sub new
-{ 
-	my $class = shift;
-	my $id = shift;
-	my $self = ZoneMinder::Control->new( $id );
-	bless( $self, $class );
-	srand( time() );
-	return $self;
-}
- 
-our $AUTOLOAD;
- 
-sub AUTOLOAD
-{
-    my $self = shift;
-    my $class = ref($self) || croak( "$self not object" );
-    my $name = $AUTOLOAD;
-    $name =~ s/.*://;
-    if ( exists($self->{$name}) )
-    {
-        return( $self->{$name} );
-    }
-    Fatal( "Can't access $name member of object of class $class" );
-}
- 
+
 sub open
 {
     my $self = shift;
@@ -83,34 +61,24 @@ sub open
 
     $self->{state} = 'open';
 }
- 
-sub close
-{ 
-	my $self = shift;
-	$self->{state} = 'closed';
-}
- 
+
 sub printMsg
 {
-	my $self = shift;
-	my $msg = shift;
-	my $msg_len = length($msg);
- 
-	Debug( $msg."[".$msg_len."]" );
+    my $self = shift;
+    my $msg = shift;
+    my $msg_len = length($msg);
+
+    Debug( $msg."[".$msg_len."]" );
 }
 
 sub sendCmd
 {
     my $self = shift;
     my $cmd = shift;
-
     my $result = undef;
-
     printMsg( $cmd, "Tx" );
 
-    #print( "http://$address/$cmd\n" );
-    my $req = HTTP::Request->new( GET=>"http://".$self->{Monitor}->{ControlAddress}."/$cmd".$self->{Monitor}->{ControlDevice} );
-	Info( "http://".$self->{Monitor}->{ControlAddress}."/$cmd".$self->{Monitor}->{ControlDevice} );
+    my $req = HTTP::Request->new( GET=>"http://".$self->{Monitor}->{ControlAddress}."/cgi-bin/hi3510/param.cgi?cmd=$cmd" );
     my $res = $self->{ua}->request($req);
 
     if ( $res->is_success )
@@ -119,275 +87,291 @@ sub sendCmd
     }
     else
     {
-        Error( "Error check failed: '".$res->status_line()."'" );
+        Error( "Error check failed:'".$res->status_line()."'" );
     }
 
     return( $result );
 }
 
- 
-sub cameraReset
+sub getCamParams
 {
-	my $self = shift;
-	Debug( "Camera Reset" );
-	my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=home&-speed=45&";
-	$self->sendCmd( $cmd );
+    my $self = shift;
+
+    my $req = HTTP::Request->new( GET=>"http://".$self->{Monitor}->{ControlAddress}."/get_camera_params.cgi" );
+    my $res = $self->{ua}->request($req);
+
+    if ( $res->is_success )
+    {
+        # Parse results setting values in %FCParams
+        my $content = $res->decoded_content;
+
+        while ($content =~ s/var\s+([^=]+)=([^;]+);//ms) {
+            $CamParams{$1} = $2;
+        }
+    }
+    else
+    {
+        Error( "Error check failed:'".$res->status_line()."'" );
+    }
 }
- 
+
+#autoStop
+#This makes use of the ZoneMinder Auto Stop Timeout on the Control Tab
+sub autoStop
+{
+    my $self = shift;
+    my $stop_command = shift;
+    my $autostop = shift;
+    if( $stop_command && $autostop)
+    {
+        Debug( "Auto Stop" );
+        usleep( $autostop );
+        my $cmd = "decoder_control.cgi?command=".$stop_command;
+        $self->sendCmd( $cmd );
+    }
+
+}
+
+# Reset the Camera
+sub reset
+{
+    my $self = shift;
+    Debug( "Camera Reset" );
+    my $cmd = "ptzctrl&-step=0&-act=home&-speed=45";
+    $self->sendCmd( $cmd );
+}
+
 #Up Arrow
 sub moveConUp
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Up" );
-	my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=up&-speed=45&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    my $stop_command = "1";
+    Debug( "Move Up" );
+    my $cmd = "decoder_control.cgi?command=0";
+    $self->sendCmd( $cmd );
+    $self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
- 
+
 #Down Arrow
 sub moveConDown
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Down" );
-	my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=right&-speed=45&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    my $stop_command = "3";
+    Debug( "Move Down" );
+    my $cmd = "ptzctrl&-step=0&-act=down&-speed=45";
+    $self->sendCmd( $cmd );
+    #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
- 
+
 #Left Arrow
 sub moveConLeft
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Left" );
-	my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=left&-speed=45&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    my $stop_command = "5";
+    Debug( "Move Left" );
+    my $cmd = "ptzctrl&-step=0&-act=left&-speed=45";
+    $self->sendCmd( $cmd );
+    #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
- 
+
 #Right Arrow
 sub moveConRight
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Right" );
-	my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=right&-speed=45&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    my $stop_command = "7";
+    Debug( "Move Right" );
+    my $cmd = "ptzctrl&-step=0&-act=right&-speed=45";
+    $self->sendCmd( $cmd );
+    $self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
- 
+
+#Zoom In
+sub zoomConTele
+{
+    my $self = shift;
+    my $stop_command = "17";
+    Debug( "Zoom Tele" );
+    my $cmd = "decoder_control.cgi?command=18";
+    $self->sendCmd( $cmd );
+    $self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
+}
+
+#Zoom Out
+sub zoomConWide
+{
+    my $self = shift;
+    my $stop_command = "19";
+    Debug( "Zoom Wide" );
+    my $cmd = "decoder_control.cgi?command=16";
+    $self->sendCmd( $cmd );
+    $self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
+}
+
 #Diagonally Up Right Arrow
+#This camera does not have builtin diagonal commands so we emulate them
 sub moveConUpRight
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Diagonally Up Right" );
-	my $cmd = "decoder_control.cgi?command=91&onestep=1&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    Debug( "Move Diagonally Up Right" );
+    $self->moveConUp( );
+    $self->moveConRight( );
 }
- 
+
 #Diagonally Down Right Arrow
+#This camera does not have builtin diagonal commands so we emulate them
 sub moveConDownRight
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Diagonally Down Right" );
-	my $cmd = "decoder_control.cgi?command=93&onestep=1&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    Debug( "Move Diagonally Down Right" );
+    $self->moveConDown( );
+    $self->moveConRight( );
 }
- 
+
 #Diagonally Up Left Arrow
+#This camera does not have builtin diagonal commands so we emulate them
 sub moveConUpLeft
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Diagonally Up Left" );
-	my $cmd = "decoder_control.cgi?command=90&onestep=1&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    Debug( "Move Diagonally Up Left" );
+    $self->moveConUp( );
+    $self->moveConLeft( );
 }
- 
+
 #Diagonally Down Left Arrow
+#This camera does not have builtin diagonal commands so we emulate them
 sub moveConDownLeft
 {
-	my $self = shift;
-	my $params = shift;
-	Debug( "Move Diagonally Down Left" );
-	my $cmd = "decoder_control.cgi?command=92&onestep=1&";
-	$self->sendCmd( $cmd );
-	my $autostop = $self->getParam( $params, 'autostop', 0 );
-    if ( $autostop && $self->{Monitor}->{AutoStopTimeout} )
-    {
-        usleep( $self->{Monitor}->{AutoStopTimeout} );
-        $self->moveStop( $params );
-    }
+    my $self = shift;
+    Debug( "Move Diagonally Down Left" );
+    $self->moveConDown( );
+    $self->moveConLeft( );
 }
- 
+
 #Stop
 sub moveStop
 {
-	my $self = shift;
-	Debug( "Move Stop" );
-	my $cmd = "decoder_control.cgi?command=1&onestep=1&";
-	$self->sendCmd( $cmd );
-}
- 
-#Move Camera to Home Position
-sub presetHome
-{
-	my $self = shift;
-	Debug( "Home Preset" );
-	my $cmd = "decoder_control.cgi?command=25&onestep=0&";
-	$self->sendCmd( $cmd );
-}
-
-# zoom out
-sub zoomRelTele
-{
     my $self = shift;
-    Debug( "Zoom Tele" );
-    my $cmd = "camera_control.cgi?param=17&value=1&";
+    Debug( "Move Stop" );
+    my $cmd = "decoder_control.cgi?command=1";
     $self->sendCmd( $cmd );
 }
 
-#zoom in
-sub zoomRelWide
-{
-    my $self = shift;
-    Debug( "Zoom Wide" );
-    my $cmd = "camera_control.cgi?param=18&value=1&";
-    $self->sendCmd( $cmd );
-}
-
- 
-#Set preset
+#Set Camera Preset
+#Presets must be translated into values internal to the camera
+#Those values are: 30,32,34,36,38,40,42,44 for presets 1-8 respectively
 sub presetSet
 {
     my $self = shift;
     my $params = shift;
     my $preset = $self->getParam( $params, 'preset' );
-	my $presetCmd = 30 + (($preset-1)*2);
-    Debug( "Set Preset $preset with cmd $presetCmd" );
-    my $cmd = "decoder_control.cgi?command=$presetCmd&onestep=0&sit=$presetCmd&";
-    $self->sendCmd( $cmd );
+    Debug( "Set Preset $preset" );
+
+    if (( $preset >= 1 ) && ( $preset <= 8 )) {
+        my $cmd = "decoder_control.cgi?command=".(($preset*2) + 28);
+        $self->sendCmd( $cmd );
+    }
 }
- 
-#Goto preset
+
+#Recall Camera Preset
+#Presets must be translated into values internal to the camera
+#Those values are: 31,33,35,37,39,41,43,45 for presets 1-8 respectively
 sub presetGoto
 {
     my $self = shift;
     my $params = shift;
     my $preset = $self->getParam( $params, 'preset' );
-    my $presetCmd = 31 + (($preset-1)*2);
-    Debug( "Goto Preset $preset with cmd $presetCmd" );
-    my $cmd = "decoder_control.cgi?command=$presetCmd&onestep=0&sit=$presetCmd&";
+    Debug( "Goto Preset $preset" );
+
+    if (( $preset >= 1 ) && ( $preset <= 8 )) {
+        my $cmd = "decoder_control.cgi?command=".(($preset*2) + 29);
+        $self->sendCmd( $cmd );
+    }
+
+    if ( $preset == 9 ) {
+        $self->horizontalPatrol();
+    }
+
+    if ( $preset == 10 ) {
+        $self->horizontalPatrolStop();
+    }
+}
+
+#Horizontal Patrol - Vertical Patrols are not supported
+sub horizontalPatrol
+{
+    my $self = shift;
+    Debug( "Horizontal Patrol" );
+    my $cmd = "decoder_control.cgi?command=20";
     $self->sendCmd( $cmd );
 }
- 
-#Turn IR on
-sub wake
+
+#Horizontal Patrol Stop
+sub horizontalPatrolStop
 {
-	my $self = shift;
-	Debug( "Wake - IR on" );
-	my $cmd = "camera_control.cgi?param=14&value=1&";
-	$self->sendCmd( $cmd );
+    my $self = shift;
+    Debug( "Horizontal Patrol Stop" );
+    my $cmd = "decoder_control.cgi?command=21";
+    $self->sendCmd( $cmd );
 }
- 
-#Turn IR off
-sub sleep
+
+# Increase Brightness
+sub irisAbsOpen
 {
-	my $self = shift;
-	Debug( "Sleep - IR off" );
-	my $cmd = "camera_control.cgi?param=14&value=0&";
-	$self->sendCmd( $cmd );
+    my $self = shift;
+    my $params = shift;
+    $self->getCamParams() unless($CamParams{'brightness'});
+    my $step = $self->getParam( $params, 'step' );
+
+    $CamParams{'brightness'} += $step;
+    $CamParams{'brightness'} = 255 if ($CamParams{'brightness'} > 255);
+    Debug( "Iris $CamParams{'brightness'}" );
+    my $cmd = "camera_control.cgi?param=1&value=".$CamParams{'brightness'};
+    $self->sendCmd( $cmd );
 }
+
+# Decrease Brightness
+sub irisAbsClose
+{
+    my $self = shift;
+    my $params = shift;
+    $self->getCamParams() unless($CamParams{'brightness'});
+    my $step = $self->getParam( $params, 'step' );
+
+    $CamParams{'brightness'} -= $step;
+    $CamParams{'brightness'} = 0 if ($CamParams{'brightness'} < 0);
+    Debug( "Iris $CamParams{'brightness'}" );
+    my $cmd = "camera_control.cgi?param=1&value=".$CamParams{'brightness'};
+    $self->sendCmd( $cmd );
+}
+
+# Increase Contrast
+sub whiteAbsIn
+{
+    my $self = shift;
+    my $params = shift;
+    $self->getCamParams() unless($CamParams{'contrast'});
+    my $step = $self->getParam( $params, 'step' );
+
+    $CamParams{'contrast'} += $step;
+    $CamParams{'contrast'} = 6 if ($CamParams{'contrast'} > 6);
+    Debug( "Iris $CamParams{'contrast'}" );
+    my $cmd = "camera_control.cgi?param=2&value=".$CamParams{'contrast'};
+    $self->sendCmd( $cmd );
+}
+
+# Decrease Contrast
+sub whiteAbsOut
+{
+    my $self = shift;
+    my $params = shift;
+    $self->getCamParams() unless($CamParams{'contrast'});
+    my $step = $self->getParam( $params, 'step' );
+
+    $CamParams{'contrast'} -= $step;
+    $CamParams{'contrast'} = 0 if ($CamParams{'contrast'} < 0);
+    Debug( "Iris $CamParams{'contrast'}" );
+    my $cmd = "camera_control.cgi?param=2&value=".$CamParams{'contrast'};
+    $self->sendCmd( $cmd );
+}
+
 1;
-__END__
-# Below is stub documentation for your module. You'd better edit it!
-
-=head1 NAME
-
-ZoneMinder::Database - Perl extension for blah blah blah
-
-=head1 SYNOPSIS
-
-  use ZoneMinder::Control::DericamP2
-  blah blah blah
-
-=head1 DESCRIPTION
-
-Stub documentation for ZoneMinder, created by h2xs. It looks like the
-author of the extension was negligent enough to leave the stub
-unedited.
-
-Blah blah blah.
-=head2 EXPORT
-
-None by default.
-
-
-
-=head1 SEE ALSO
-
-Mention other useful documentation such as the documentation of
-related modules or operating system documentation (such as man pages
-in UNIX), or any relevant external documentation such as RFCs or
-standards.
-
-If you have a mailing list set up for your module, mention it here.
-
-If you have a web site set up for your module, mention it here.
-
-=head1 AUTHOR
-
-Philip Coombes, <philip.coombes@zoneminder.com>
-
-=head1 COPYRIGHT AND LICENSE
-
-Copyright (C) 2001-2008  Philip Coombes
-
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.8.3 or,
-at your option, any later version of Perl 5 you may have available.
-
-
-=cut
