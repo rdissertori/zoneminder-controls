@@ -79,6 +79,7 @@ sub sendCmd
     printMsg( $cmd, "Tx" );
 
     my $req = HTTP::Request->new( GET=>"http://".$self->{Monitor}->{ControlAddress}."/cgi-bin/hi3510/param.cgi?cmd=$cmd" );
+    Info( "http://".$self->{Monitor}->{ControlAddress}."/$cmd".$self->{Monitor}->{ControlDevice} );
     my $res = $self->{ua}->request($req);
 
     if ( $res->is_success )
@@ -149,7 +150,7 @@ sub moveConUp
     Debug( "Move Up" );
     my $cmd = "decoder_control.cgi?command=0";
     $self->sendCmd( $cmd );
-    $self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
+    #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
 
 #Down Arrow
@@ -182,7 +183,7 @@ sub moveConRight
     Debug( "Move Right" );
     my $cmd = "ptzctrl&-step=0&-act=right&-speed=45";
     $self->sendCmd( $cmd );
-    $self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
+    #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
 
 #Zoom In
