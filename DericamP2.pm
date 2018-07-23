@@ -214,8 +214,8 @@ sub moveConUpRight
 {
     my $self = shift;
     Debug( "Move Diagonally Up Right" );
-    $self->moveConUp( );
-    $self->moveConRight( );
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=upright&-speed=45";
+    $self->sendCmd( $cmd );
 }
 
 #Diagonally Down Right Arrow
@@ -224,8 +224,8 @@ sub moveConDownRight
 {
     my $self = shift;
     Debug( "Move Diagonally Down Right" );
-    $self->moveConDown( );
-    $self->moveConRight( );
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=downright&-speed=45";
+    $self->sendCmd( $cmd );
 }
 
 #Diagonally Up Left Arrow
@@ -234,8 +234,8 @@ sub moveConUpLeft
 {
     my $self = shift;
     Debug( "Move Diagonally Up Left" );
-    $self->moveConUp( );
-    $self->moveConLeft( );
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=upleft&-speed=45";
+    $self->sendCmd( $cmd );
 }
 
 #Diagonally Down Left Arrow
@@ -244,8 +244,8 @@ sub moveConDownLeft
 {
     my $self = shift;
     Debug( "Move Diagonally Down Left" );
-    $self->moveConDown( );
-    $self->moveConLeft( );
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=downnleft&-speed=45";
+    $self->sendCmd( $cmd );
 }
 
 #Stop
