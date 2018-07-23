@@ -78,7 +78,7 @@ sub sendCmd
     my $result = undef;
     printMsg( $cmd, "Tx" );
 
-    my $req = HTTP::Request->new( GET=>"http://".$self->{Monitor}->{ControlAddress}."/cgi-bin/hi3510/param.cgi?cmd=$cmd" );
+    my $req = HTTP::Request->new( GET=>"http://".$self->{Monitor}->{ControlAddress}."/$cmd" );
     Info( "http://".$self->{Monitor}->{ControlAddress}."/$cmd".$self->{Monitor}->{ControlDevice} );
     my $res = $self->{ua}->request($req);
 
@@ -138,7 +138,7 @@ sub reset
 {
     my $self = shift;
     Debug( "Camera Reset" );
-    my $cmd = "ptzctrl&-step=0&-act=home&-speed=45";
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=home&-speed=45";
     $self->sendCmd( $cmd );
 }
 
@@ -148,7 +148,7 @@ sub moveConUp
     my $self = shift;
     my $stop_command = "1";
     Debug( "Move Up" );
-    my $cmd = "decoder_control.cgi?command=0";
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=up&-speed=45";
     $self->sendCmd( $cmd );
     #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
@@ -159,7 +159,7 @@ sub moveConDown
     my $self = shift;
     my $stop_command = "3";
     Debug( "Move Down" );
-    my $cmd = "ptzctrl&-step=0&-act=down&-speed=45";
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=down&-speed=45";
     $self->sendCmd( $cmd );
     #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
@@ -170,7 +170,7 @@ sub moveConLeft
     my $self = shift;
     my $stop_command = "5";
     Debug( "Move Left" );
-    my $cmd = "ptzctrl&-step=0&-act=left&-speed=45";
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=left&-speed=45";
     $self->sendCmd( $cmd );
     #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
@@ -181,7 +181,7 @@ sub moveConRight
     my $self = shift;
     my $stop_command = "7";
     Debug( "Move Right" );
-    my $cmd = "ptzctrl&-step=0&-act=right&-speed=45";
+    my $cmd = "cgi-bin/hi3510/param.cgi?cmd=ptzctrl&-step=0&-act=right&-speed=45";
     $self->sendCmd( $cmd );
     #$self->autoStop( $stop_command, $self->{Monitor}->{AutoStopTimeout} );
 }
